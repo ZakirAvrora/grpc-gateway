@@ -1,6 +1,7 @@
 package descriptor
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/internal/descriptor/openapiconfig"
@@ -714,5 +715,109 @@ func assertStringSlice(t *testing.T, message string, got, want []string) {
 		if got[i] != want[i] {
 			t.Errorf("%s[%d] = %#v; want %#v", message, i, got[i], want[i])
 		}
+	}
+}
+
+func TestLookupEnum(t *testing.T) {
+	// create a new registry
+	r := NewRegistry()
+
+	// create a new enum
+	e := &Enum{}
+
+	// add the enum to the registry
+	r.enums[".example.Enum"] = e
+
+	// test looking up the enum by name with a prefix
+	tests := []struct {
+		location string
+		name     string
+		expected *Enum
+		err      error
+	}{
+		{".example", "Enum", e, nil},
+		{"", ".example.Enum", e, nil},
+		{"", "Enum", nil, fmt.Errorf("no enum found: Enum")},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("LookupEnum(%q, %q)", tt.location, tt.name), func(t *testing.T) {
+			result, err := r.LookupEnum(tt.location, tt.name)
+			if err != nil && err.Error() != tt.err.Error() {
+				t.Errorf("Unexpected error while looking up enum: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected result to be %v, but got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestLookupFile(t *testing.T) {
+	// create a new registry
+	r := NewRegistry()
+
+	// create a new file
+	f := &File{}
+
+	// add the file to the registry
+	r.files["test.proto"] = f
+
+	// test looking up the file by name
+	tests := []struct {
+		name     string
+		expected *File
+		err      error
+	}{
+		{"test.proto", f, nil},
+		{"nonexistent.proto", nil, fmt.Errorf("no such file given: nonexistent.proto")},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("LookupFile(%q)", tt.name), func(t *testing.T) {
+			result, err := r.LookupFile(tt.name)
+			if err != nil && err.Error() != tt.err.Error() {
+				t.Errorf("Unexpected error while looking up file: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected result to be %v, but got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestCheckDuplicateAnnotation(t *testing.T) {
+	// create a new registry
+	r := NewRegistry()
+
+	// create a new service
+	svc := &Service{}
+
+	// test checking for duplicate annotations
+	tests := []struct {
+		httpMethod   string
+		httpTemplate string
+		svc          *Service
+		expectedErr  error
+	}{
+		{"GET", "/example", svc, nil},
+		{"GET", "/example", svc, fmt.Errorf("duplicate annotation: method=GET, template=/example")},
+		{"POST", "/example", svc, nil},
+		{"GET", "/example/1", svc, nil},
+		{"GET", "/example/1", svc, fmt.Errorf("duplicate annotation: method=GET, template=/example/1")},
+		{"GET", "/example", &Service{}, nil},
+		{"GET", "/example", nil, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("CheckDuplicateAnnotation(%q, %q, %+v)", tt.httpMethod, tt.httpTemplate, tt.svc), func(t *testing.T) {
+			err := r.CheckDuplicateAnnotation(tt.httpMethod, tt.httpTemplate, tt.svc)
+			if err != nil && err.Error() != tt.expectedErr.Error() {
+				t.Errorf("Unexpected error while checking for duplicate annotation: %v", err)
+			}
+			if err == nil && tt.expectedErr != nil {
+				t.Errorf("Expected error to be %v, but got nil", tt.expectedErr)
+			}
+		})
 	}
 }
